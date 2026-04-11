@@ -34,13 +34,15 @@ def analyze_audio(file_path: str, model=None) -> dict:
     audio = preprocess(file_path)
     results = model(audio, sampling_rate=SAMPLE_RATE)
 
-    # results = [{"label": "fake", "score": 0.99}, {"label": "real", "score": 0.01}]
+    # ⚠️ Labels are inverted in this checkpoint — swap them
     scores = {r["label"].lower(): round(r["score"], 4) for r in results}
+    real_score = scores.get("fake", 0.0)   # "fake" label actually = real
+    fake_score = scores.get("real", 0.0)   # "real" label actually = fake
 
     return {
-        "probability_real": scores.get("real", 0.0),
-        "probability_fake": scores.get("fake", 0.0),
-        "result": "real" if scores.get("real", 0) > scores.get("fake", 0) else "fake",
+        "probability_real": real_score,
+        "probability_fake": fake_score,
+        "result": "real" if real_score > fake_score else "fake",
     }
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
