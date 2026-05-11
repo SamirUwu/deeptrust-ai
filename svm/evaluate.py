@@ -29,8 +29,8 @@ print(f"  Eval: {X_eval.shape} — Real: {y_eval.sum()} Fake: {(y_eval==0).sum()
 
 # ── Load model ────────────────────────────────────────────────────
 print("\nLoading SVM...")
-model  = joblib.load(os.path.join(SVM_DIR, "best_svm_v2.pkl"))
-scaler = joblib.load(os.path.join(SVM_DIR, "scaler_v2.pkl"))
+model  = joblib.load(os.path.join(SVM_DIR, "best_svm_v3.pkl"))
+scaler = joblib.load(os.path.join(SVM_DIR, "scaler_v3.pkl"))
 
 # ── Normalize ─────────────────────────────────────────────────────
 X_eval = scaler.transform(X_eval)
