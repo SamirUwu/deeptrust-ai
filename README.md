@@ -1,41 +1,45 @@
 # DeepTrust AI
 
-Web platform for detecting deepfake audio and video.
+Web platform for detecting deepfake audio and video using pretrained AI models.
+
+---
 
 ## Features
-- Upload audio/video files
-- Analyze authenticity using AI models
-- Display probability and confidence
+
+- Upload audio or video files for deepfake analysis
+- Real-time probability and confidence scores
 - Basic history tracking
+- REST API backend (Flask) + React frontend (Next.js)
+
+---
 
 ## Tech Stack
-- Frontend: React + Tailwind
-- Backend: Flask (Python)
-- AI: PyTorch (pretrained models)
 
-## Status
-MVP in development
-
-------------------------------------------------------------------------------------------------------------------------------------
-
-# Deepfake Detection
-
-A collection of scripts to detect deepfakes in **audio**, **images**, and **video** using pretrained models.
+- **Frontend**: Next.js + Tailwind + shadcn/ui
+- **Backend**: Flask (Python)
+- **AI — Audio**: Wav2Vec2 (`facebook/wav2vec2-base`) fine-tuned for deepfake detection
+- **AI — Video**: EfficientNet-B0 trained on FaceForensics++ c23 + Celeb-DF v2
 
 ---
 
 ## Project Structure
 
 ```
-your-repo/
-├── AASIST/               ← git submodule (audio model architecture)
+DeepTrustAI/
+├── AASIST/                          ← git submodule (not used in web pipeline)
+├── components/deep-trust/           ← Next.js frontend components
 ├── pretrained/
-│   └── AASIST.pth        ← pretrained weights (copy manually, ~85MB)
-├── analyze_audio.py      ← audio detection via AASIST
-├── analyze_audio2.py     ← audio detection via HuggingFace (easier)
-├── analyze_image.py      ← image detection
-├── analyze_video.py      ← video detection
-└── README.md
+│   └── AASIST.pth                   ← AASIST weights (standalone scripts only)
+├── weights/
+│   ├── mejor_modelo.pt              ← Wav2Vec2 audio model weights
+│   ├── umbral.json                  ← optimal decision threshold (0.41)
+│   └── efficientnet_b0_v5.pt        ← EfficientNet video model weights
+├── svm/
+│   ├── best_svm_v3.pkl              ← trained SVM (AASIST pipeline, research only)
+│   └── scaler_v3.pkl                ← StandardScaler for SVM embeddings
+├── api.py                           ← Flask backend (main entry point)
+├── next.config.mjs                  ← Next.js config
+└── package.json
 ```
 
 ---
@@ -43,7 +47,8 @@ your-repo/
 ## Requirements
 
 - Python **3.10 or 3.11** (not 3.12+)
-- Git with submodule support
+- Node.js 18+
+- Git
 
 ---
 
@@ -53,10 +58,10 @@ your-repo/
 
 ```bash
 git clone --recurse-submodules https://github.com/you/your-repo.git
-cd your-repo
+cd DeepTrustAI
 ```
 
-### 2. Create a virtual environment
+### 2. Create a Python virtual environment
 
 ```bash
 python -m venv .venv
@@ -68,88 +73,137 @@ python -m venv .venv
 source .venv/bin/activate
 ```
 
-### 3. Install dependencies
+### 3. Install Python dependencies
 
 ```bash
-pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
-pip install transformers librosa soundfile opencv-python Pillow
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+pip install flask flask-cors
+pip install transformers librosa soundfile
+pip install timm facenet-pytorch
+pip install opencv-python Pillow
+pip install scikit-learn joblib
 ```
 
-For `analyze_audio.py` (AASIST) only:
+### 4. Install frontend dependencies
+
 ```bash
-pip install -r AASIST/requirements.txt
+npm install
 ```
 
-### 4. Pretrained weights (AASIST only)
+### 5. Add model weights
 
-Copy `AASIST.pth` into the `pretrained/` folder manually.  
-The HuggingFace models used by the other scripts **download automatically** on first run and are cached locally.
+Place the following files in the `weights/` folder (request from the team):
 
----
-
-## Usage
-
-### Audio — AASIST (higher accuracy, needs weights file)
-```bash
-python analyze_audio.py path/to/audio.wav
+```
+weights/
+├── mejor_modelo.pt          ← Wav2Vec2 audio model (~360MB)
+├── umbral.json              ← decision threshold
+└── efficientnet_b0_v5.pt   ← EfficientNet video model (~20MB)
 ```
 
-### Audio — HuggingFace (easier, no setup)
-```bash
-python analyze_audio2.py path/to/audio.wav
-```
-
-### Image
-```bash
-python analyze_image.py path/to/image.jpg
-```
-
-### Video
-```bash
-python analyze_video.py path/to/video.mp4
+`umbral.json` format:
+```json
+{ "umbral": 0.409912109375 }
 ```
 
 ---
 
-## Output
+## Running the Project
 
-All scripts return the same format:
+You need **two terminals** running at the same time.
 
-```
-─── Result ───────────────────────────────
-  Real probability : 82.34%
-  Fake probability : 17.66%
-  Verdict          : REAL
+### Terminal 1 — Python backend
 
-─── Metrics ──────────────────────────────
-  Confidence       : 82.34%  ← how sure the model is
-  Entropy          : 0.4321  ← lower = more decisive
-──────────────────────────────────────────
+```bash
+python api.py
 ```
 
-| Metric | What it means |
+You should see:
+```
+Loading models...
+  Audio model loaded — umbral: 0.4099
+  Video model loaded
+All models loaded!
+Running on http://127.0.0.1:8000
+```
+
+### Terminal 2 — Next.js frontend
+
+```bash
+npm run dev
+```
+
+Open http://localhost:3000 in your browser.
+
+---
+
+## API Endpoints
+
+### POST `/api/analyze/audio`
+Accepts `.wav`, `.mp3`, `.ogg`, `.flac`, `.m4a`.
+
+```json
+{
+  "type": "audio",
+  "label": "Authentic",
+  "probability": 0.87,
+  "confidence": "High",
+  "probabilidad_deepfake": "13.0%",
+  "nivel_confianza": "78.4%",
+  "explicacion": "El sistema analizó la firma acústica..."
+}
+```
+
+### POST `/api/analyze/video`
+Accepts `.mp4`, `.avi`, `.mov`, `.mkv`.
+
+```json
+{
+  "type": "video",
+  "label": "Potential Deepfake",
+  "probability": 0.23,
+  "confidence": "High",
+  "frames_analyzed": 12
+}
+```
+
+### GET `/health`
+Returns `{"status": "ok"}` — use to verify the backend is running.
+
+---
+
+## Models
+
+### Audio — Wav2Vec2 Classifier
+- Base: `facebook/wav2vec2-base` (frozen backbone)
+- Head: 3-layer MLP (768 → 256 → 64 → 1)
+- Threshold: 0.4099 (optimized on validation set)
+- Input: 16kHz mono audio
+
+### Video — EfficientNet-B0
+- Architecture: EfficientNet-B0 (ImageNet pretrained, fine-tuned)
+- Training data: FaceForensics++ c23 + Celeb-DF v2
+- Face detection: MTCNN (min confidence 0.90)
+- Input: 12 sampled frames per video, 224×224 face crops
+
+| Dataset | AUC-ROC |
 |---|---|
-| `probability_real` | Likelihood the media is genuine |
-| `probability_fake` | Likelihood the media is AI-generated or manipulated |
-| `confidence` | How certain the model is (either way) |
-| `entropy` | Uncertainty — near 0 = very sure, near 0.693 = total coin flip |
-
----
-
-## Models Used
-
-| Script | Model | Type |
-|---|---|---|
-| `analyze_audio.py` | AASIST | Graph Attention Network (custom weights) |
-| `analyze_audio2.py` | `MelodyMachine/Deepfake-audio-detection-V2` | wav2vec2 |
-| `analyze_image.py` | `prithivMLmods/deepfake-detector-model-v1` | SigLIP ViT |
-| `analyze_video.py` | `prithivMLmods/deepfake-detector-model-v1` | SigLIP ViT (per-frame) |
+| Celeb-DF v2 (cross-validation) | 0.9999 |
+| DFDC (in-the-wild test) | 0.7498 |
 
 ---
 
 ## Known Limitations
 
-- **Low quality / old videos and images** may be misclassified — compression artifacts can resemble deepfake artifacts
-- **Audio models** work best with clean 16kHz recordings
-- **Video detection** samples 20 frames and averages scores — it does not analyze temporal consistency
-- All models were trained on specific datasets (FaceForensics++, ASVspoof 2019) and may not generalize perfectly to all real-world media
+- Audio model works best with clean 16kHz recordings — compressed formats (OGG, MP3 from messaging apps) may affect accuracy
+- Video model may struggle with low-quality or heavily compressed footage
+- Both models were trained on specific datasets and may not generalize perfectly to all real-world media
+- No GPU required but inference will be slower on CPU
+
+---
+
+## Team
+
+- Juan David Barcelo Barraza — Video module (EfficientNet-B0)
+- Samir Barcelo — Audio module (Wav2Vec2 + AASIST research)
+- Amir Orozco / Elkin Pulgar — Frontend & backend integration
