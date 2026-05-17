@@ -35,5 +35,5 @@ coverage
 .nyc_output
 # Misc
 *.pem
-
+mejor_modelo.pt
 LA
