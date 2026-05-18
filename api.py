@@ -132,8 +132,8 @@ def analyze_video_file(file_path: str, frames_per_video: int = 12) -> dict:
             continue
         img         = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
         boxes, conf = mtcnn.detect(img)
-        if boxes is None or conf[0] < 0.90:
-            continue
+        if boxes is None or conf[0] < 0.70:
+            continue    
         x1, y1, x2, y2 = boxes[0]
         w, h            = x2 - x1, y2 - y1
         x1, y1          = max(0, x1 - 0.15*w), max(0, y1 - 0.15*h)
@@ -195,7 +195,10 @@ def route_video():
         return jsonify({"error": "No file provided"}), 400
 
     file = request.files["file"]
-    tmp  = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
+    
+    # Guardar con extensión correcta según el tipo
+    ext = os.path.splitext(file.filename)[1].lower() or ".webm"
+    tmp = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
     tmp.write(file.read())
     tmp.close()
 

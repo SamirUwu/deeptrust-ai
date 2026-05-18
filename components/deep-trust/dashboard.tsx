@@ -52,6 +52,12 @@ export function DeepTrustDashboard() {
   const [history, setHistory] = useState<HistoryItem[]>([])
   const [error, setError] = useState<string | null>(null)
 
+  const handleRecordingComplete = useCallback((file: File) => {
+  setSelectedFile(file)
+  setResults(null)
+  setError(null)
+}, [])
+
   const handleAnalyze = useCallback(async () => {
     if (!selectedFile) return
 
@@ -92,7 +98,7 @@ export function DeepTrustDashboard() {
           <div className="bg-card/80 backdrop-blur-sm border border-border rounded-2xl shadow-xl shadow-primary/5 p-6 md:p-8 space-y-6">
             <Header />
             <FileUpload onFileSelect={setSelectedFile} selectedFile={selectedFile} />
-            <RecordControls />
+            <RecordControls onRecordingComplete={handleRecordingComplete} />
 
             <Button
               size="lg"
