@@ -49,6 +49,7 @@ DeepTrustAI/
 - Python **3.10 or 3.11** (not 3.12+)
 - Node.js 18+
 - Git
+- FFmpeg (required for audio/video processing)
 
 ---
 
@@ -61,7 +62,22 @@ git clone --recurse-submodules https://github.com/you/your-repo.git
 cd DeepTrustAI
 ```
 
-### 2. Create a Python virtual environment
+### 2. Install FFmpeg (Windows)
+
+FFmpeg is required to process audio and video files recorded from the browser.
+
+1. Go to https://ffmpeg.org/download.html
+2. Click **Windows** → **Windows builds from gyan.dev**
+3. Download `ffmpeg-release-essentials.zip`
+4. Extract the zip and open the `bin/` folder
+5. Copy `ffmpeg.exe`, `ffplay.exe`, and `ffprobe.exe` to `C:\Windows\System32\`
+6. Open a new terminal and verify the installation:
+
+```bash
+ffmpeg -version
+```
+
+### 3. Create a Python virtual environment
 
 ```bash
 python -m venv .venv
@@ -73,7 +89,7 @@ python -m venv .venv
 source .venv/bin/activate
 ```
 
-### 3. Install Python dependencies
+### 4. Install Python dependencies
 
 ```bash
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
@@ -84,13 +100,13 @@ pip install opencv-python Pillow
 pip install scikit-learn joblib
 ```
 
-### 4. Install frontend dependencies
+### 5. Install frontend dependencies
 
 ```bash
 npm install
 ```
 
-### 5. Add model weights
+### 6. Add model weights
 
 Place the following files in the `weights/` folder (request from the team):
 
@@ -140,7 +156,7 @@ Open http://localhost:3000 in your browser.
 ## API Endpoints
 
 ### POST `/api/analyze/audio`
-Accepts `.wav`, `.mp3`, `.ogg`, `.flac`, `.m4a`.
+Accepts `.wav`, `.mp3`, `.ogg`, `.flac`, `.m4a`, `.webm`.
 
 ```json
 {
@@ -155,7 +171,7 @@ Accepts `.wav`, `.mp3`, `.ogg`, `.flac`, `.m4a`.
 ```
 
 ### POST `/api/analyze/video`
-Accepts `.mp4`, `.avi`, `.mov`, `.mkv`.
+Accepts `.mp4`, `.avi`, `.mov`, `.mkv`, `.webm`.
 
 ```json
 {
@@ -183,7 +199,7 @@ Returns `{"status": "ok"}` — use to verify the backend is running.
 ### Video — EfficientNet-B0
 - Architecture: EfficientNet-B0 (ImageNet pretrained, fine-tuned)
 - Training data: FaceForensics++ c23 + Celeb-DF v2
-- Face detection: MTCNN (min confidence 0.90)
+- Face detection: MTCNN (min confidence 0.70)
 - Input: 12 sampled frames per video, 224×224 face crops
 
 | Dataset | AUC-ROC |
@@ -205,5 +221,5 @@ Returns `{"status": "ok"}` — use to verify the backend is running.
 ## Team
 
 - Juan David Barcelo Barraza — Video module (EfficientNet-B0)
-- Samir Barcelo — Audio module (Wav2Vec2 + AASIST research)
-- Amir Orozco / Elkin Pulgar — Frontend & backend integration
+- Amir Orozco / Elkin Pulgar — Audio module (Wav2Vec2 + AASIST research)
+- Samir Barcelo — Frontend & backend integration
