@@ -14,8 +14,9 @@ const API_URL = "http://localhost:8000"
 async function analyzeFile(file: File): Promise<AnalysisResult[]> {
   const isAudio = file.type.startsWith("audio/")
   const isVideo = file.type.startsWith("video/")
+  const isImage = file.type.startsWith("image/")
 
-  if (!isAudio && !isVideo) {
+  if (!isAudio && !isVideo && !isImage) {
     throw new Error("Unsupported file type")
   }
 
@@ -24,22 +25,26 @@ async function analyzeFile(file: File): Promise<AnalysisResult[]> {
 
   if (isAudio) {
     const res = await fetch(`${API_URL}/api/analyze/audio`, {
-      method: "POST",
-      body: formData,
+      method: "POST", body: formData,
     })
     if (!res.ok) throw new Error("Audio analysis failed")
-    const data = await res.json()
-    return [data]
+    return [await res.json()]
   }
 
   if (isVideo) {
     const res = await fetch(`${API_URL}/api/analyze/video`, {
-      method: "POST",
-      body: formData,
+      method: "POST", body: formData,
     })
     if (!res.ok) throw new Error("Video analysis failed")
-    const data = await res.json()
-    return [data]
+    return [await res.json()]
+  }
+
+  if (isImage) {
+    const res = await fetch(`${API_URL}/api/analyze/image`, {
+      method: "POST", body: formData,
+    })
+    if (!res.ok) throw new Error("Image analysis failed")
+    return [await res.json()]
   }
 
   return []
@@ -53,10 +58,10 @@ export function DeepTrustDashboard() {
   const [error, setError] = useState<string | null>(null)
 
   const handleRecordingComplete = useCallback((file: File) => {
-  setSelectedFile(file)
-  setResults(null)
-  setError(null)
-}, [])
+    setSelectedFile(file)
+    setResults(null)
+    setError(null)
+  }, [])
 
   const handleAnalyze = useCallback(async () => {
     if (!selectedFile) return

@@ -214,7 +214,7 @@ Returns `{"status": "ok"}` — use to verify the backend is running.
 - Audio model works best with clean 16kHz recordings — compressed formats (OGG, MP3 from messaging apps) may affect accuracy
 - Video model may struggle with low-quality or heavily compressed footage
 - Both models were trained on specific datasets and may not generalize perfectly to all real-world media
-- No GPU required but inference will be slower on CPU
+- No GPU required but inference will be slower on CPU 
 
 ---
 

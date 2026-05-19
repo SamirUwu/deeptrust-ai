@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useCallback } from "react"
-import { Mic, Video, Square } from "lucide-react"
+import { Mic, Video, Square, Camera } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -12,6 +12,7 @@ interface RecordControlsProps {
 export function RecordControls({ onRecordingComplete }: RecordControlsProps) {
   const [isRecordingAudio, setIsRecordingAudio] = useState(false)
   const [isRecordingVideo, setIsRecordingVideo] = useState(false)
+  const [isCapturingPhoto, setIsCapturingPhoto] = useState(false)
   const [recordingTime, setRecordingTime] = useState(0)
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
@@ -48,7 +49,7 @@ export function RecordControls({ onRecordingComplete }: RecordControlsProps) {
       const stream = await navigator.mediaDevices.getUserMedia(constraints)
       streamRef.current = stream
 
-      const mimeType     = type === "audio" ? "audio/webm" : "video/webm"
+      const mimeType      = type === "audio" ? "audio/webm" : "video/webm"
       const mediaRecorder = new MediaRecorder(stream, { mimeType })
       mediaRecorderRef.current = mediaRecorder
       chunksRef.current = []
@@ -99,6 +100,45 @@ export function RecordControls({ onRecordingComplete }: RecordControlsProps) {
     else { if (isRecordingAudio) stopRecording(); startRecording("video") }
   }, [isRecordingAudio, isRecordingVideo, startRecording, stopRecording])
 
+  const handleTakePhoto = useCallback(async () => {
+    try {
+      setIsCapturingPhoto(true)
+
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true })
+      streamRef.current = stream
+
+      const video = document.createElement("video")
+      video.srcObject = stream
+      video.setAttribute("playsinline", "true")
+      await video.play()
+
+      await new Promise((resolve) => setTimeout(resolve, 500))
+
+      const canvas    = document.createElement("canvas")
+      canvas.width    = video.videoWidth
+      canvas.height   = video.videoHeight
+      const ctx       = canvas.getContext("2d")
+
+      if (ctx) {
+        ctx.drawImage(video, 0, 0)
+        canvas.toBlob((blob) => {
+          if (blob) {
+            const fileName = `captured_photo_${Date.now()}.jpg`
+            const file     = new File([blob], fileName, { type: "image/jpeg" })
+            onRecordingComplete(file)
+          }
+          stream.getTracks().forEach((track) => track.stop())
+          streamRef.current = null
+          setIsCapturingPhoto(false)
+        }, "image/jpeg", 0.9)
+      }
+    } catch (error) {
+      console.error("Error capturing photo:", error)
+      alert("Could not access your camera. Please check permissions.")
+      setIsCapturingPhoto(false)
+    }
+  }, [onRecordingComplete])
+
   const isRecording = isRecordingAudio || isRecordingVideo
 
   return (
@@ -137,6 +177,18 @@ export function RecordControls({ onRecordingComplete }: RecordControlsProps) {
           ) : (
             <><Video className="h-4 w-4" />Record Video</>
           )}
+        </Button>
+      </div>
+
+      <div className="flex justify-center">
+        <Button
+          variant="secondary"
+          className={cn("h-12 w-64 gap-2 transition-all", isCapturingPhoto && "animate-pulse")}
+          onClick={handleTakePhoto}
+          disabled={isRecording || isCapturingPhoto}
+        >
+          <Camera className="h-4 w-4" />
+          {isCapturingPhoto ? "Capturing..." : "Take Photo"}
         </Button>
       </div>
 

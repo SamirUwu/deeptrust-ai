@@ -118,6 +118,35 @@ def analyze_audio_file(file_path: str) -> dict:
         "explicacion"           : explicacion,
     }
 
+def analyze_image_file(file_path: str) -> dict:
+    image  = Image.open(file_path).convert("RGB")
+
+    # Detect face with MTCNN
+    boxes, conf = mtcnn.detect(image)
+    if boxes is not None and conf[0] >= 0.70:
+        x1, y1, x2, y2 = boxes[0]
+        w, h = x2 - x1, y2 - y1
+        x1, y1 = max(0, x1 - 0.15*w), max(0, y1 - 0.15*h)
+        x2, y2 = min(image.width, x2 + 0.15*w), min(image.height, y2 + 0.15*h)
+        image = image.crop((x1, y1, x2, y2))
+
+    tensor = video_transform(image).unsqueeze(0).to(DEVICE)
+    with torch.no_grad():
+        prob = torch.sigmoid(effnet(tensor)).item()
+
+    fake_probability = float(prob)
+    prob_real        = 1.0 - fake_probability
+    confidence       = "High"   if abs(fake_probability - 0.5) > 0.30 else \
+                       "Medium" if abs(fake_probability - 0.5) > 0.15 else "Low"
+
+    return {
+        "type"      : "video",   # usa "video" para que el frontend lo renderice igual
+        "probability": round(prob_real, 4),
+        "label"     : "Authentic" if fake_probability > 0.5 else "Potential Deepfake",
+        "confidence": confidence,
+        "frames_analyzed": 1,
+    }
+
 # ── Video inference ───────────────────────────────────────────────
 def analyze_video_file(file_path: str, frames_per_video: int = 12) -> dict:
     cap          = cv2.VideoCapture(file_path)
@@ -180,6 +209,32 @@ def route_audio():
     except Exception as e:
         import traceback
         traceback.print_exc()  # ← esto imprime el error completo en la terminal
+        return jsonify({"error": str(e)}), 500
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except:
+            pass
+
+    return jsonify(result)
+
+@app.route("/api/analyze/image", methods=["POST"])
+def route_image():
+    if "file" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+
+    file = request.files["file"]
+    ext  = os.path.splitext(file.filename)[1].lower() or ".jpg"
+
+    tmp = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
+    tmp.write(file.read())
+    tmp.close()
+
+    try:
+        result = analyze_image_file(tmp.name)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
     finally:
         try:
