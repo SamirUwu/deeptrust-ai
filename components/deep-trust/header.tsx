@@ -17,7 +17,7 @@ export function Header() {
         </h1>
       </div>
       <p className="text-muted-foreground max-w-md mx-auto text-balance">
-        Verify audio and video authenticity in seconds with advanced AI-powered deepfake detection
+        Verify audio, image and video authenticity in seconds with advanced AI-powered deepfake detection
       </p>
     </header>
   )

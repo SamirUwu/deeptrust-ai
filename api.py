@@ -142,7 +142,7 @@ def analyze_image_file(file_path: str) -> dict:
     return {
         "type"      : "video",   # usa "video" para que el frontend lo renderice igual
         "probability": round(prob_real, 4),
-        "label"     : "Authentic" if fake_probability > 0.5 else "Potential Deepfake",
+        "label"     : "Authentic" if fake_probability < 0.5 else "Potential Deepfake",
         "confidence": confidence,
         "frames_analyzed": 1,
     }

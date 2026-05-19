@@ -99,7 +99,7 @@ export function FileUpload({ onFileSelect, selectedFile }: FileUploadProps) {
               Drag and drop your file here, or <span className="text-primary">browse</span>
             </p>
             <p className="text-xs text-muted-foreground/70">
-              Supports audio and video files
+              Supports audio, image and video files
             </p>
           </div>
         )}
