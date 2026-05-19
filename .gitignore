@@ -36,4 +36,5 @@ coverage
 # Misc
 *.pem
 mejor_modelo.pt
+cnnlstm_v1.pt
 LA

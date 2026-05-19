@@ -1,6 +1,6 @@
 """
 api.py
-Flask backend for DeepTrust AI — audio + video deepfake detection.
+Flask backend for DeepTrust AI — audio + video + image deepfake detection.
 Run: python api.py
 """
 
@@ -13,7 +13,6 @@ warnings.filterwarnings("ignore")
 
 import torch
 import torch.nn as nn
-import torchaudio
 import numpy as np
 import cv2
 import timm
@@ -46,18 +45,22 @@ class Wav2Vec2Classifier(nn.Module):
         hidden = out.last_hidden_state.mean(dim=1)
         return self.classifier(hidden).squeeze(1)
 
-# ── EfficientNet setup ────────────────────────────────────────────
-VIDEO_WEIGHTS = os.path.join(os.path.dirname(__file__), "weights", "efficientnet_b0_v5.pt")
-AUDIO_WEIGHTS = os.path.join(os.path.dirname(__file__), "weights", "mejor_modelo.pt")
-UMBRAL_PATH   = os.path.join(os.path.dirname(__file__), "weights", "umbral.json")
+# ── Paths ─────────────────────────────────────────────────────────
+WEIGHTS_DIR         = os.path.join(os.path.dirname(__file__), "weights")
+VIDEO_WEIGHTS       = os.path.join(WEIGHTS_DIR, "efficientnet_b0_v5.pt")
+CNNLSTM_WEIGHTS     = os.path.join(WEIGHTS_DIR, "cnnlstm_v1.pt")
+FACE_WEIGHTS        = os.path.join(WEIGHTS_DIR, "face_detector_v1.pt")
+IMAGE_WEIGHTS       = os.path.join(WEIGHTS_DIR, "image_detector_v1.pt")
+AUDIO_WEIGHTS       = os.path.join(WEIGHTS_DIR, "mejor_modelo.pt")
+UMBRAL_PATH         = os.path.join(WEIGHTS_DIR, "umbral.json")
 
 app = Flask(__name__)
 CORS(app)
 
-# ── Load all models once at startup ───────────────────────────────
+# ── Load models ───────────────────────────────────────────────────
 print("Loading models...")
 
-# Wav2Vec2 audio model
+# Audio
 with open(UMBRAL_PATH, "r") as f:
     umbral = json.load(f)["umbral"]
 
@@ -65,19 +68,34 @@ audio_model = Wav2Vec2Classifier(freeze_backbone=True)
 audio_model.load_state_dict(torch.load(AUDIO_WEIGHTS, map_location=DEVICE))
 audio_model = audio_model.to(DEVICE)
 audio_model.eval()
-print(f"  Audio model loaded — umbral: {umbral}")
+print(f"  Audio (Wav2Vec2) loaded — umbral: {umbral}")
 
-# EfficientNet video model
+# Video — EfficientNet
 effnet = timm.create_model("efficientnet_b0", pretrained=False, num_classes=1, drop_rate=0.4)
 effnet.load_state_dict(torch.load(VIDEO_WEIGHTS, map_location=DEVICE))
 effnet = effnet.to(DEVICE)
 effnet.eval()
-print("  Video model loaded")
+print("  Video (EfficientNet-B0) loaded")
 
-# MTCNN face detector
+# Video — CNN-LSTM
+cnnlstm = torch.load(CNNLSTM_WEIGHTS, map_location=DEVICE)
+cnnlstm.eval()
+print("  Video (CNN-LSTM) loaded")
+
+# Image — Face detector
+face_model = torch.load(FACE_WEIGHTS, map_location=DEVICE)
+face_model.eval()
+print("  Image (Face Detector) loaded")
+
+# Image — General detector
+image_model = torch.load(IMAGE_WEIGHTS, map_location=DEVICE)
+image_model.eval()
+print("  Image (Image Detector) loaded")
+
+# MTCNN
 mtcnn = MTCNN(min_face_size=80, thresholds=[0.6, 0.7, 0.9], keep_all=False, device=DEVICE)
 
-# Video transform
+# Transforms
 video_transform = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
@@ -86,69 +104,85 @@ video_transform = transforms.Compose([
 
 print("All models loaded!")
 
+# ── Helpers ───────────────────────────────────────────────────────
+def confidence_level(fake_prob: float) -> str:
+    return "High" if abs(fake_prob - 0.5) > 0.30 else \
+           "Medium" if abs(fake_prob - 0.5) > 0.15 else "Low"
+
+def crop_face(image: Image.Image) -> Image.Image:
+    boxes, conf = mtcnn.detect(image)
+    if boxes is None or conf[0] < 0.70:
+        return image
+    x1, y1, x2, y2 = boxes[0]
+    w, h = x2 - x1, y2 - y1
+    x1, y1 = max(0, x1 - 0.15*w), max(0, y1 - 0.15*h)
+    x2, y2 = min(image.width, x2 + 0.15*w), min(image.height, y2 + 0.15*h)
+    return image.crop((x1, y1, x2, y2))
+
 # ── Audio inference ───────────────────────────────────────────────
 def analyze_audio_file(file_path: str) -> dict:
     import librosa
-    audio, sr = librosa.load(file_path, sr=16000, mono=True)
+    audio, _ = librosa.load(file_path, sr=16000, mono=True)
     wav = torch.FloatTensor(audio).unsqueeze(0).to(DEVICE)
 
     with torch.no_grad():
-        logits    = audio_model(wav)
-        prob_fake = torch.sigmoid(logits).item()
+        prob_fake = torch.sigmoid(audio_model(wav)).item()
 
     es_fake       = prob_fake >= umbral
     confianza     = (prob_fake - umbral) / (1.0 - umbral) if es_fake else (umbral - prob_fake) / umbral
     confianza_pct = round(confianza * 100, 2)
-    prob_fake_pct = round(prob_fake * 100, 2)
-
-    explicacion = (
-        f"El sistema analizó la firma acústica mediante Wav2Vec2. "
-        f"Se detectaron {'anomalías sintéticas y artefactos de clonación' if es_fake else 'patrones vocales naturales y respiración coherente'} "
-        f"en el espectro de frecuencias. "
-        f"El umbral de decisión del sistema es {round(umbral * 100, 1)}%."
-    )
 
     return {
         "type"                  : "audio",
-        "probability"           : round(1.0 - prob_fake, 4),
-        "label": "Authentic" if es_fake else "Potential Deepfake", "probability": round(prob_fake, 4),
+        "probability"           : round(prob_fake if es_fake else 1.0 - prob_fake, 4),
+        "label"                 : "Potential Deepfake" if es_fake else "Authentic",
         "confidence"            : "High" if confianza_pct > 60 else "Medium" if confianza_pct > 30 else "Low",
-        "probabilidad_deepfake" : f"{prob_fake_pct}%",
+        "probabilidad_deepfake" : f"{round(prob_fake * 100, 2)}%",
         "nivel_confianza"       : f"{confianza_pct}%",
-        "explicacion"           : explicacion,
+        "explicacion"           : (
+            f"El sistema analizó la firma acústica mediante Wav2Vec2. "
+            f"Se detectaron {'anomalías sintéticas' if es_fake else 'patrones vocales naturales'} "
+            f"en el espectro de frecuencias. Umbral: {round(umbral * 100, 1)}%."
+        ),
     }
 
-def analyze_image_file(file_path: str) -> dict:
+# ── Image inference — Face Detector ──────────────────────────────
+def analyze_image_face(file_path: str) -> dict:
     image  = Image.open(file_path).convert("RGB")
+    face   = crop_face(image)
+    tensor = video_transform(face).unsqueeze(0).to(DEVICE)
 
-    # Detect face with MTCNN
-    boxes, conf = mtcnn.detect(image)
-    if boxes is not None and conf[0] >= 0.70:
-        x1, y1, x2, y2 = boxes[0]
-        w, h = x2 - x1, y2 - y1
-        x1, y1 = max(0, x1 - 0.15*w), max(0, y1 - 0.15*h)
-        x2, y2 = min(image.width, x2 + 0.15*w), min(image.height, y2 + 0.15*h)
-        image = image.crop((x1, y1, x2, y2))
-
-    tensor = video_transform(image).unsqueeze(0).to(DEVICE)
     with torch.no_grad():
-        prob = torch.sigmoid(effnet(tensor)).item()
-
-    fake_probability = float(prob)
-    prob_real        = 1.0 - fake_probability
-    confidence       = "High"   if abs(fake_probability - 0.5) > 0.30 else \
-                       "Medium" if abs(fake_probability - 0.5) > 0.15 else "Low"
+        prob_fake = torch.sigmoid(face_model(tensor)).item()
 
     return {
-        "type"      : "video",   # usa "video" para que el frontend lo renderice igual
-        "probability": round(prob_real, 4),
-        "label"     : "Authentic" if fake_probability < 0.5 else "Potential Deepfake",
-        "confidence": confidence,
+        "type"           : "video",
+        "probability"    : round(1.0 - prob_fake, 4),
+        "label"          : "Authentic" if prob_fake < 0.5 else "Potential Deepfake",
+        "confidence"     : confidence_level(prob_fake),
         "frames_analyzed": 1,
+        "model"          : "face_detector_v1",
     }
 
-# ── Video inference ───────────────────────────────────────────────
-def analyze_video_file(file_path: str, frames_per_video: int = 12) -> dict:
+# ── Image inference — General Detector ───────────────────────────
+def analyze_image_general(file_path: str) -> dict:
+    image  = Image.open(file_path).convert("RGB")
+    tensor = video_transform(image).unsqueeze(0).to(DEVICE)
+
+    with torch.no_grad():
+        prob_fake = torch.sigmoid(image_model(tensor)).item()
+
+    return {
+        "type"           : "video",
+        "probability"    : round(1.0 - prob_fake, 4),
+        "label"          : "Authentic" if prob_fake < 0.5 else "Potential Deepfake",
+        "confidence"     : confidence_level(prob_fake),
+        "frames_analyzed": 1,
+        "model"          : "image_detector_v1",
+    }
+
+# ── Video inference — EfficientNet ────────────────────────────────
+def analyze_video_efficientnet(file_path: str, frames_per_video: int = 12) -> dict:
     cap          = cv2.VideoCapture(file_path)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     indices      = np.linspace(0, total_frames - 1, frames_per_video, dtype=int)
@@ -160,35 +194,55 @@ def analyze_video_file(file_path: str, frames_per_video: int = 12) -> dict:
         if not ret:
             continue
         img         = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-        boxes, conf = mtcnn.detect(img)
-        if boxes is None or conf[0] < 0.70:
-            continue    
-        x1, y1, x2, y2 = boxes[0]
-        w, h            = x2 - x1, y2 - y1
-        x1, y1          = max(0, x1 - 0.15*w), max(0, y1 - 0.15*h)
-        x2, y2          = min(img.width, x2 + 0.15*w), min(img.height, y2 + 0.15*h)
-        face            = img.crop((x1, y1, x2, y2))
-        tensor          = video_transform(face).unsqueeze(0).to(DEVICE)
+        face        = crop_face(img)
+        tensor      = video_transform(face).unsqueeze(0).to(DEVICE)
         with torch.no_grad():
-            prob = torch.sigmoid(effnet(tensor)).item()
-        probs.append(prob)
+            probs.append(torch.sigmoid(effnet(tensor)).item())
 
     cap.release()
-
     if not probs:
         return None
 
     fake_probability = float(np.mean(probs))
-    prob_real        = 1.0 - fake_probability
-    confidence       = "High"   if abs(fake_probability - 0.5) > 0.30 else \
-                       "Medium" if abs(fake_probability - 0.5) > 0.15 else "Low"
-
     return {
         "type"           : "video",
-        "probability"    : round(prob_real, 4),
-        "label": "Authentic" if fake_probability > 0.5 else "Potential Deepfake",
-        "confidence"     : confidence,
+        "probability"    : round(1.0 - fake_probability, 4),
+        "label"          : "Authentic" if fake_probability < 0.5 else "Potential Deepfake",
+        "confidence"     : confidence_level(fake_probability),
         "frames_analyzed": len(probs),
+        "model"          : "efficientnet_b0_v5",
+    }
+
+# ── Video inference — CNN-LSTM ────────────────────────────────────
+def analyze_video_cnnlstm(file_path: str, frames_per_video: int = 12) -> dict:
+    cap          = cv2.VideoCapture(file_path)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    indices      = np.linspace(0, total_frames - 1, frames_per_video, dtype=int)
+
+    probs = []
+    for idx in indices:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+        ret, frame = cap.read()
+        if not ret:
+            continue
+        img    = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        face   = crop_face(img)
+        tensor = video_transform(face).unsqueeze(0).to(DEVICE)
+        with torch.no_grad():
+            probs.append(torch.sigmoid(cnnlstm(tensor)).item())
+
+    cap.release()
+    if not probs:
+        return None
+
+    fake_probability = float(np.mean(probs))
+    return {
+        "type"           : "video",
+        "probability"    : round(1.0 - fake_probability, 4),
+        "label"          : "Authentic" if fake_probability < 0.5 else "Potential Deepfake",
+        "confidence"     : confidence_level(fake_probability),
+        "frames_analyzed": len(probs),
+        "model"          : "cnnlstm_v1",
     }
 
 # ── Routes ────────────────────────────────────────────────────────
@@ -196,80 +250,92 @@ def analyze_video_file(file_path: str, frames_per_video: int = 12) -> dict:
 def route_audio():
     if "file" not in request.files:
         return jsonify({"error": "No file provided"}), 400
-
     file = request.files["file"]
     ext  = os.path.splitext(file.filename)[1].lower()
-
-    tmp = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
-    tmp.write(file.read())
-    tmp.close()
-
+    tmp  = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
+    tmp.write(file.read()); tmp.close()
     try:
         result = analyze_audio_file(tmp.name)
     except Exception as e:
-        import traceback
-        traceback.print_exc()  # ← esto imprime el error completo en la terminal
+        import traceback; traceback.print_exc()
         return jsonify({"error": str(e)}), 500
     finally:
-        try:
-            os.unlink(tmp.name)
-        except:
-            pass
-
+        try: os.unlink(tmp.name)
+        except: pass
     return jsonify(result)
 
-@app.route("/api/analyze/image", methods=["POST"])
-def route_image():
+@app.route("/api/analyze/image/face", methods=["POST"])
+def route_image_face():
     if "file" not in request.files:
         return jsonify({"error": "No file provided"}), 400
-
     file = request.files["file"]
     ext  = os.path.splitext(file.filename)[1].lower() or ".jpg"
-
-    tmp = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
-    tmp.write(file.read())
-    tmp.close()
-
+    tmp  = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
+    tmp.write(file.read()); tmp.close()
     try:
-        result = analyze_image_file(tmp.name)
+        result = analyze_image_face(tmp.name)
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        import traceback; traceback.print_exc()
         return jsonify({"error": str(e)}), 500
     finally:
-        try:
-            os.unlink(tmp.name)
-        except:
-            pass
-
+        try: os.unlink(tmp.name)
+        except: pass
     return jsonify(result)
 
-@app.route("/api/analyze/video", methods=["POST"])
-def route_video():
+@app.route("/api/analyze/image/general", methods=["POST"])
+def route_image_general():
     if "file" not in request.files:
         return jsonify({"error": "No file provided"}), 400
-
     file = request.files["file"]
-    
-    # Guardar con extensión correcta según el tipo
-    ext = os.path.splitext(file.filename)[1].lower() or ".webm"
-    tmp = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
-    tmp.write(file.read())
-    tmp.close()
-
+    ext  = os.path.splitext(file.filename)[1].lower() or ".jpg"
+    tmp  = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
+    tmp.write(file.read()); tmp.close()
     try:
-        result = analyze_video_file(tmp.name)
+        result = analyze_image_general(tmp.name)
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        try: os.unlink(tmp.name)
+        except: pass
+    return jsonify(result)
+
+@app.route("/api/analyze/video/efficientnet", methods=["POST"])
+def route_video_efficientnet():
+    if "file" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+    file = request.files["file"]
+    ext  = os.path.splitext(file.filename)[1].lower() or ".webm"
+    tmp  = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
+    tmp.write(file.read()); tmp.close()
+    try:
+        result = analyze_video_efficientnet(tmp.name)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
-        try:
-            os.unlink(tmp.name)
-        except:
-            pass
-
+        try: os.unlink(tmp.name)
+        except: pass
     if result is None:
         return jsonify({"error": "No face detected in video"}), 422
+    return jsonify(result)
 
+@app.route("/api/analyze/video/cnnlstm", methods=["POST"])
+def route_video_cnnlstm():
+    if "file" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+    file = request.files["file"]
+    ext  = os.path.splitext(file.filename)[1].lower() or ".webm"
+    tmp  = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
+    tmp.write(file.read()); tmp.close()
+    try:
+        result = analyze_video_cnnlstm(tmp.name)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        try: os.unlink(tmp.name)
+        except: pass
+    if result is None:
+        return jsonify({"error": "No face detected in video"}), 422
     return jsonify(result)
 
 @app.route("/health", methods=["GET"])
