@@ -1,12 +1,9 @@
-"use client"
-
 import { cn } from "@/lib/utils"
-import { FileAudio, FileVideo, Clock, Shield, ShieldAlert } from "lucide-react"
-
+import { FileAudio, FileVideo, Image, Clock, Shield, ShieldAlert } from "lucide-react"
 export interface HistoryItem {
   id: string
   fileName: string
-  fileType: "audio" | "video"
+  fileType: "audio" | "video" | "image"
   result: "Authentic" | "Potential Deepfake"
   timestamp: Date
 }
@@ -36,7 +33,7 @@ export function AnalysisHistory({ history }: AnalysisHistoryProps) {
       <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
         {history.map((item) => {
           const isAuthentic = item.result === "Authentic"
-          const FileIcon = item.fileType === "audio" ? FileAudio : FileVideo
+          const FileIcon = item.fileType === "audio" ? FileAudio : item.fileType === "video" ? FileVideo : Image
           const StatusIcon = isAuthentic ? Shield : ShieldAlert
 
           return (

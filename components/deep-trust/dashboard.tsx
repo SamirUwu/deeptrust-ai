@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { Scan, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Header } from "./header"
@@ -8,54 +8,60 @@ import { FileUpload } from "./file-upload"
 import { RecordControls } from "./record-controls"
 import { AnalysisResults, type AnalysisResult } from "./analysis-results"
 import { AnalysisHistory, type HistoryItem } from "./analysis-history"
-
+import { ModelSelector, type ModelOption, type FileCategory, getDefaultModel } from "./model-selector"
 const API_URL = "http://localhost:8000"
 
-async function analyzeFile(file: File): Promise<AnalysisResult[]> {
-  const isAudio = file.type.startsWith("audio/")
-  const isVideo = file.type.startsWith("video/")
-  const isImage = file.type.startsWith("image/")
+function getFileCategory(file: File | null): FileCategory {
+  if (!file) return null
+  if (file.type.startsWith("video/")) return "video"
+  if (file.type.startsWith("image/")) return "image"
+  if (file.type.startsWith("audio/")) return "audio"
+  return null
+}
 
-  if (!isAudio && !isVideo && !isImage) {
-    throw new Error("Unsupported file type")
-  }
-
+async function analyzeFile(file: File, model: ModelOption): Promise<AnalysisResult> {
   const formData = new FormData()
   formData.append("file", file)
 
-  if (isAudio) {
-    const res = await fetch(`${API_URL}/api/analyze/audio`, {
-      method: "POST", body: formData,
-    })
-    if (!res.ok) throw new Error("Audio analysis failed")
-    return [await res.json()]
+  const response = await fetch(`${API_URL}${model.endpoint}`, {
+    method: "POST",
+    body: formData,
+  })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: "Analysis failed" }))
+    throw new Error(error.error || "Analysis failed")
   }
 
-  if (isVideo) {
-    const res = await fetch(`${API_URL}/api/analyze/video`, {
-      method: "POST", body: formData,
-    })
-    if (!res.ok) throw new Error("Video analysis failed")
-    return [await res.json()]
-  }
+  const data = await response.json()
 
-  if (isImage) {
-    const res = await fetch(`${API_URL}/api/analyze/image`, {
-      method: "POST", body: formData,
-    })
-    if (!res.ok) throw new Error("Image analysis failed")
-    return [await res.json()]
+  return {
+    type: data.type || getFileCategory(file) || "video",
+    probability: data.probability,
+    confidence: data.confidence,
+    label: data.label,
+    modelName: model.name,
   }
-
-  return []
 }
 
 export function DeepTrustDashboard() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [selectedModel, setSelectedModel] = useState<ModelOption | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [results, setResults] = useState<AnalysisResult[] | null>(null)
   const [history, setHistory] = useState<HistoryItem[]>([])
   const [error, setError] = useState<string | null>(null)
+
+  const fileCategory = getFileCategory(selectedFile)
+
+  // Reset model to default when file type changes
+  useEffect(() => {
+    if (fileCategory) {
+      setSelectedModel(getDefaultModel(fileCategory))
+    } else {
+      setSelectedModel(null)
+    }
+  }, [fileCategory])
 
   const handleRecordingComplete = useCallback((file: File) => {
     setSelectedFile(file)
@@ -64,25 +70,21 @@ export function DeepTrustDashboard() {
   }, [])
 
   const handleAnalyze = useCallback(async () => {
-    if (!selectedFile) return
+    if (!selectedFile || !selectedModel) return
 
     setIsAnalyzing(true)
     setResults(null)
     setError(null)
 
     try {
-      const analysisResults = await analyzeFile(selectedFile)
-      setResults(analysisResults)
-
-      const overallResult = analysisResults.every((r) => r.label === "Authentic")
-        ? "Authentic"
-        : "Potential Deepfake"
+      const analysisResult = await analyzeFile(selectedFile, selectedModel)
+      setResults([analysisResult])
 
       const newHistoryItem: HistoryItem = {
         id: Date.now().toString(),
         fileName: selectedFile.name,
-        fileType: selectedFile.type.startsWith("audio/") ? "audio" : "video",
-        result: overallResult,
+        fileType: fileCategory || "video",
+        result: analysisResult.label === "Authentic" ? "Authentic" : "Potential Deepfake",
         timestamp: new Date(),
       }
 
@@ -92,7 +94,7 @@ export function DeepTrustDashboard() {
     } finally {
       setIsAnalyzing(false)
     }
-  }, [selectedFile])
+  }, [selectedFile, selectedModel, fileCategory])
 
   return (
     <div className="min-h-screen bg-background">
@@ -105,11 +107,18 @@ export function DeepTrustDashboard() {
             <FileUpload onFileSelect={setSelectedFile} selectedFile={selectedFile} />
             <RecordControls onRecordingComplete={handleRecordingComplete} />
 
+            {/* Model Selector — aparece solo cuando hay archivo seleccionado */}
+            <ModelSelector
+              fileCategory={fileCategory}
+              selectedModel={selectedModel}
+              onModelSelect={setSelectedModel}
+            />
+
             <Button
               size="lg"
               className="w-full h-14 text-lg font-semibold gap-2 bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/25 transition-all hover:shadow-primary/40"
               onClick={handleAnalyze}
-              disabled={!selectedFile || isAnalyzing}
+              disabled={!selectedFile || !selectedModel || isAnalyzing}
             >
               {isAnalyzing ? (
                 <>

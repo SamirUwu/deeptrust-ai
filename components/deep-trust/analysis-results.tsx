@@ -1,13 +1,14 @@
 "use client"
 
 import { cn } from "@/lib/utils"
-import { Shield, ShieldAlert, Volume2, MonitorPlay } from "lucide-react"
+import { Shield, ShieldAlert, Volume2, MonitorPlay, Image, Cpu } from "lucide-react"
 
 export interface AnalysisResult {
-  type: "audio" | "video"
+  type: "audio" | "video" | "image"
   probability: number
   confidence: "Low" | "Medium" | "High"
   label: "Authentic" | "Potential Deepfake"
+  modelName?: string
 }
 
 interface AnalysisResultsProps {
@@ -17,7 +18,7 @@ interface AnalysisResultsProps {
 
 function ResultCard({ result }: { result: AnalysisResult }) {
   const isAuthentic = result.label === "Authentic"
-  const Icon = result.type === "audio" ? Volume2 : MonitorPlay
+  const Icon = result.type === "audio" ? Volume2 : result.type === "video" ? MonitorPlay : Image
   const StatusIcon = isAuthentic ? Shield : ShieldAlert
 
   return (
@@ -100,6 +101,18 @@ function ResultCard({ result }: { result: AnalysisResult }) {
             {result.label}
           </span>
         </div>
+
+        {result.modelName && (
+          <div className="flex items-center justify-between pt-2 border-t border-border/50">
+            <span className="text-xs text-muted-foreground flex items-center gap-1">
+              <Cpu className="h-3 w-3" />
+              Model used
+            </span>
+            <span className="text-xs font-medium text-foreground">
+              {result.modelName}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   )

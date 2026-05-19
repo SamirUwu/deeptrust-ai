@@ -1,7 +1,5 @@
-"use client"
-
 import { useState, useCallback } from "react"
-import { Upload, FileAudio, FileVideo, X } from "lucide-react"
+import { Upload, FileAudio, FileVideo, Image, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface FileUploadProps {
@@ -26,7 +24,7 @@ export function FileUpload({ onFileSelect, selectedFile }: FileUploadProps) {
     e.preventDefault()
     setIsDragging(false)
     const file = e.dataTransfer.files[0]
-    if (file && (file.type.startsWith("audio/") || file.type.startsWith("video/"))) {
+    if (file && (file.type.startsWith("audio/") || file.type.startsWith("video/") || file.type.startsWith("image/"))) {
       onFileSelect(file)
     }
   }, [onFileSelect])
@@ -44,6 +42,7 @@ export function FileUpload({ onFileSelect, selectedFile }: FileUploadProps) {
 
   const isAudio = selectedFile?.type.startsWith("audio/")
   const isVideo = selectedFile?.type.startsWith("video/")
+  const isImage = selectedFile?.type.startsWith("image/")
 
   return (
     <div className="space-y-3">
@@ -63,7 +62,7 @@ export function FileUpload({ onFileSelect, selectedFile }: FileUploadProps) {
         {!selectedFile && (
           <input
             type="file"
-            accept="audio/*,video/*"
+            accept="audio/*,video/*,image/*"
             onChange={handleFileChange}
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
           />
@@ -73,6 +72,7 @@ export function FileUpload({ onFileSelect, selectedFile }: FileUploadProps) {
           <div className="flex items-center justify-center gap-3">
             {isAudio && <FileAudio className="h-8 w-8 text-primary" />}
             {isVideo && <FileVideo className="h-8 w-8 text-primary" />}
+            {isImage && <Image className="h-8 w-8 text-primary" />}
             <div className="text-left">
               <p className="text-sm font-medium text-foreground truncate max-w-[200px]">
                 {selectedFile.name}
@@ -99,7 +99,7 @@ export function FileUpload({ onFileSelect, selectedFile }: FileUploadProps) {
               Drag and drop your file here, or <span className="text-primary">browse</span>
             </p>
             <p className="text-xs text-muted-foreground/70">
-              Supports audio, image and video files
+              Supports audio, video, and image files
             </p>
           </div>
         )}
