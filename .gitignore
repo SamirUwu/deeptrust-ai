@@ -1,40 +1,50 @@
 # Dependencies
 node_modules
 .pnpm-store
+
 # Next.js
 .next
 out
 build
 dist
+
 # Debug logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+
 # Environment variables
 .env
 .env.local
 .env.development.local
-.env.test.localp
+.env.test.local
 .env.production.local
+
 # Vercel
 .vercel
+
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts
+
 # Editor
 .vscode
 .idea
 *.swp
 *.swo
+
 # OS
 .DS_Store
 Thumbs.db
+
 # Testing
 coverage
 .nyc_output
+
 # Misc
 *.pem
-mejor_modelo.pt
-cnnlstm_v1.pt
-LA
+
+# AI models
+weights/*.pt
+*.pth
