@@ -46,5 +46,7 @@ coverage
 *.pem
 
 # AI models
-weights/*.pt
+weights/*
+!weights/.gitkeep
 *.pth
+
