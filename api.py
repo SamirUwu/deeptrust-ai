@@ -85,7 +85,7 @@ class CNNLSTM(nn.Module):
 # ── Paths ─────────────────────────────────────────────────────────
 WEIGHTS_DIR     = os.path.join(os.path.dirname(__file__), "weights")
 VIDEO_WEIGHTS   = os.path.join(WEIGHTS_DIR, "efficientnet_b0_v5.pt")
-CNNLSTM_WEIGHTS = os.path.join(WEIGHTS_DIR, "cnnlstm_v1.pt")
+CNNLSTM_WEIGHTS = os.path.join(WEIGHTS_DIR, "cnnlstm_v2.pt")
 FACE_WEIGHTS    = os.path.join(WEIGHTS_DIR, "face_detector_v1.pt")
 IMAGE_WEIGHTS   = os.path.join(WEIGHTS_DIR, "image_detector_v1.pt")
 AUDIO_WEIGHTS   = os.path.join(WEIGHTS_DIR, "mejor_modelo.pt")
@@ -175,6 +175,19 @@ def crop_face(image: Image.Image) -> Image.Image:
 def analyze_audio_file(file_path: str) -> dict:
     import librosa
     audio, _ = librosa.load(file_path, sr=16000, mono=True)
+
+    # ── NORMALIZACIÓN (igual que en entrenamiento) ──
+    mean, std = audio.mean(), audio.std()
+    audio = (audio - mean) / (std + 1e-8)
+    
+    # ── TRUNCADO / PADDING a 6 segundos ──
+    MAX_SAMPLES = 16000 * 6  # 96_000
+    if len(audio) > MAX_SAMPLES:
+        s = (len(audio) - MAX_SAMPLES) // 2
+        audio = audio[s:s + MAX_SAMPLES]
+    else:
+        audio = np.pad(audio, (0, MAX_SAMPLES - len(audio)))
+
     wav = torch.FloatTensor(audio).unsqueeze(0).to(DEVICE)
 
     with torch.no_grad():
@@ -262,7 +275,7 @@ def analyze_video_cnnlstm(file_path: str, frames_per_video: int = 16) -> dict:
         "label"          : "Authentic" if fake_probability < 0.5 else "Potential Deepfake",
         "confidence"     : confidence_level(fake_probability),
         "frames_analyzed": len(frames),
-        "model"          : "cnnlstm_v1",
+        "model"          : "cnnlstm_v2",
     }
 
 # ── Image inference — Face detector ──────────────────────────────
